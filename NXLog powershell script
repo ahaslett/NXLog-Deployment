@@ -1,0 +1,95 @@
+### URL for NXLOG https://nxlog.co/system/files/products/files/348/nxlog-ce-2.10.2150.msi
+
+$SERVER_IP = Read-Host -Prompt 'Carefully Type the Syslog Server IP and then Hit Enter '
+$SERVER_IP1 = Read-Host -Prompt '(again) Carefully Type the Syslog Server IP and then Hit Enter '
+
+if ($SERVER_IP -ne $SERVER_IP1) {
+    Write-Output "The server IP's dont match"
+    exit
+}
+  
+  #Set nxlog and sysmon variables
+  $nxlogprocessrunning = Get-Process nxlog -ErrorAction SilentlyContinue
+  $sysmonprocessrunning = Get-Process sysmon -ErrorAction SilentlyContinue
+  $nxlogurl = "https://nxlog.co/system/files/products/files/348/nxlog-ce-2.10.2150.msi"
+  $nxlogfile = "C:\Windows\Temp\nxlog.msi"
+  $sysmonurl = "https://download.sysinternals.com/files/Sysmon.zip"
+  $sysmonfile = "C:\Windows\Temp\Sysmon.zip"
+  $sysconfigurl = "https://raw.githubusercontent.com/Starke427/Sysmon-Configs/master/sysmon_config.xml"
+  $sysconfigfile = "C:\Windows\Temp\sysmon_config.xml"
+  $nxlogconfigurl = "https://raw.githubusercontent.com/Starke427/AlienVault/master/nxlog.conf"
+  $nxlogconfigfile = 'C:\Program Files (x86)\nxlog\conf\nxlog.conf'
+  $currentdirectory = pwd
+  
+  #DownloadNxlog then sysmon then install both
+  
+  function downloadNxlog{
+      Copy-Item -Path \\equswprdfile01\agent_deployment\nxlog.msi -Destination $currentdirectory -Force    
+  }
+  
+  function downloadSysmon{
+      Copy-Item -Path \\equswprdfile01\agent_deployment\sysmon.zip -Destination $currentdirectory -Force  
+  }
+  
+  function downloadNxlogConfig{
+      Copy-Item -Path \\equswprdfile01\agent_deployment\nxlog.conf -Destination $currentdirectory -Force 
+  }
+  
+  function downloadSysmonConfig{
+      Copy-Item -Path \\equswprdfile01\agent_deployment\sysmon_config.xml -Destination $currentdirectory -Force 
+  }
+  
+  
+  function installSysmon{
+    Expand-Archive -LiteralPath "$currentdirectory\Sysmon.zip" -DestinationPath 'C:\Sysmon' -force
+    mv $sysconfigfile C:\Sysmon
+    C:\Sysmon\Sysmon.exe -accepteula -h sha256 -n -l -i $sysconfigfile
+  }
+  
+  function installSysmonConfigFile($path){
+      Invoke-WebRequest -Uri $sysmonurl -OutFile $sysmonfile
+      mv $sysmonfile $path
+      $currentPath = pwd
+      cd $path
+      Write-Output "Sysmon config file has been installed at $path"
+      cd $currentPath
+  }
+  
+  
+  
+  # Check if NXLog is running
+  function installNXLog{
+      $url1 = "https://nxlog.co/system/files/products/files/348/nxlog-ce-2.10.2150.msi"
+      $file1 = "C:\nxlog-ce-2.10.2150.msi"
+  
+      $url2 = "https://raw.githubusercontent.com/Starke427/AlienVault/master/nxlog.conf"
+      $file2 = "C:\Program Files (x86)\nxlog\conf\nxlog.conf"
+  
+  
+    # Download and install nxlog
+      (New-Object -TypeName System.Net.WebClient).DownloadFile($url1, $file1)
+      Start-Process C:\Windows\System32\msiexec.exe -ArgumentList "/i C:\nxlog-ce-2.10.2150.msi /q" -wait
+  
+    # Download and modify nxlog configuration and restart nxlog
+      (New-Object -TypeName System.Net.WebClient).DownloadFile($url2, $file2)
+      (Get-Content "C:\Program Files (x86)\nxlog\conf\nxlog.conf").replace("CHANGEME", $SERVER_IP) | Set-Content "C:\Program Files (x86)\nxlog\conf\nxlog.conf"
+      Restart-Service -Name nxlog
+  }
+  
+  installNXLog
+  
+  # Check for Sysmon
+  
+  if ($sysmonprocessrunning) { 
+      Write-Output "Sysmon is already running"
+      $sysmonpath = Read-Host "Enter the path to the sysmon directory. For example -> C:\Sysmon"
+      downloadSysmonConfig
+      Write-Output "Downloading and installing the sysmon config file"
+      Start-Sleep -s 5
+      installSysmonConfigFile($sysmonpath)
+      exit
+  }else {
+      downloadSysmon
+      downloadSysmonConfig
+      installSysmon
+  }
